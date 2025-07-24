@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import math
 
-import PositionalEncoding
-import SemanticEmbedding
-import DecoderLayer
+from PositionalEncoding import PositionalEncoding
+from SemanticEmbedding import SemanticEmbedding
+from DecoderLayer import DecoderLayer
 
 class OneRecDecoder(nn.Module):
     def __init__(self, num_layers, nhead, d_model,
