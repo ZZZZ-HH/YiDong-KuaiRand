@@ -3,7 +3,7 @@ from argparse import ArgumentTypeError
 from preprocessing.pre_kuairand import pre_kuairand
 from preprocessing.cal_baseline_label import cal_baseline_label
 from preprocessing.cal_ground_truth import cal_ground_truth
-
+import pandas
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -43,6 +43,33 @@ def main():
     kuairand_dat.head(100).to_csv('../data/KuaiRand-1K-Process/KuaiRand_subset_head_100.csv')
     print("前10条数据如下", kuairand_dat.head(10))
 
+def group_user_id(df_select_data):
+    # Group the data by user_id and convert each group to a dictionary or array
+    grouped_data = df_select_data.groupby('user_id')
+
+    # Convert to a list of arrays (one array per user)
+    user_groups = [group.values for _, group in grouped_data]
+
+    # Or convert to a dictionary where keys are user_ids and values are DataFrames
+    user_dict = {user_id: group for user_id, group in grouped_data}
+
+    # Or if you want all data in a single array with user_id as the first column
+    data_array = df_select_data.values
+
+    # Example usage:
+    print(f"Total users: {len(user_groups)}")
+    print(f"Shape of first user's data: {user_groups[0].shape}")
+    print(f"Shape of first user's data: {user_groups[1].shape}")
+    print(f"Shape of first user's data: {user_groups[2].shape}")
+    print(f"Shape of first user's data: {user_groups[3].shape}")
+    print(f"Shape of first user's data: {user_groups[4].shape}")
 
 if __name__ == "__main__":
-    main()
+    kuairand_dat = pandas.read_csv("./KuaiRand-1K-Process/KuaiRand_subset.csv")
+    print("原始数据集长度", kuairand_dat.shape)
+
+    # todo 可以查看数据
+    kuairand_dat.head(100).to_csv('./KuaiRand-1K-Process/KuaiRand_subset_head_100.csv')
+    print(kuairand_dat.head(10))
+
+    group_user_id(kuairand_dat)
