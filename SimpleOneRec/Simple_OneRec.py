@@ -8,25 +8,10 @@ import numpy as np
 from tqdm import tqdm
 import os
 
-# 1. 配置参数
-class Config:
-    data_path = "KuaiRand_subset.csv"
-    max_seq_len = 256      # 最大序列长度
-    semantic_id_layers = 3  # 语义ID层数
-    
-    vocab_size = 8192       # 语义ID数量
-    d_model = 256           # 模型维度
-    num_layers = 3          # 编码器/解码器层数
-    
-    batch_size = 16
-    learning_rate = 2e-4
-    num_epochs = 5
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    save_dir = "checkpoints"
-    os.makedirs(save_dir, exist_ok=True)
+import MoE as MoE
+import OneRec_Config as Config
 
-# 2. 数据预处理
+# 数据预处理
 class KuaiRecDataset(Dataset):
     def __init__(self, df, config):
         self.config = config
@@ -77,7 +62,7 @@ class KuaiRecDataset(Dataset):
     def __getitem__(self, idx):
         return torch.tensor(self.samples[idx], dtype=torch.long)
 
-# 3. 简化版OneRec
+# 简化版OneRec
 class SimpleOneRec(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -94,7 +79,41 @@ class SimpleOneRec(nn.Module):
             pad_token_id=0              # 0作为padding
         )
         self.model = T5ForConditionalGeneration(t5_config)
+
+        self._replace_ffn_with_moe(
+            num_experts=config.num_experts if hasattr(config, 'num_experts') else 24,
+            top_k=config.top_k if hasattr(config, 'top_k') else 2
+        )
     
+    def _replace_ffn_with_moe(self, num_experts=24, top_k=2):
+        for i, layer in enumerate(self.model.decoder.block):
+            # MoE层
+            moe = MoE.MoELayer(
+                d_model=self.config.d_model,
+                d_ff=self.config.d_model * 4,
+                num_experts=num_experts,
+                top_k=top_k
+            )
+            
+            # 保存原始层归一化
+            layer_norm = layer.layer[2].layer_norm
+            
+            # 创建新MoE层
+            class MoELayerWrapper(nn.Module):
+                def __init__(self, layer_norm, moe, dropout_rate=0.1):
+                    super().__init__()
+                    self.layer_norm = layer_norm
+                    self.moe = moe
+                    self.dropout = nn.Dropout(dropout_rate)
+                
+                def forward(self, hidden_states, **kwargs):
+                    norm_x = self.layer_norm(hidden_states)
+                    moe_output = self.moe(norm_x)
+                    return hidden_states + self.dropout(moe_output)
+            
+            # 替换原FFN层
+            layer.layer[2] = MoELayerWrapper(layer_norm, moe)
+
     def forward(self, input_ids):
         """
         输入: input_ids [batch_size, seq_len]
@@ -115,7 +134,7 @@ class SimpleOneRec(nn.Module):
         )
         return outputs.loss
 
-# 4. 训练函数
+# 训练函数
 def train_model(config):
     print("加载数据...")
     df = pd.read_csv(config.data_path)
@@ -176,10 +195,11 @@ if __name__ == "__main__":
     print(f"当前设备: {torch.cuda.current_device()}")
     print(f"设备名称: {torch.cuda.get_device_name(0)}")
     
-    config = Config()
+    config = Config.Config()
     print(f"使用设备: {config.device}")
     print(f"配置参数: \n最大序列长度: {config.max_seq_len}\n词汇表大小: {config.vocab_size}")
     print(f"模型维度: {config.d_model}\n层数: {config.num_layers}")
+    print(f"MoE专家数量: {config.num_experts}\nMoE激活专家数: {config.top_k}")
     print(f"批大小: {config.batch_size}\n学习率: {config.learning_rate}")
     
     train_model(config)
