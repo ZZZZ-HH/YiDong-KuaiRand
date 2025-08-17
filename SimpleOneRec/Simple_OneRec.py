@@ -68,7 +68,6 @@ class SimpleOneRec(nn.Module):
         super().__init__()
         self.config = config
         
-        # T5架构
         t5_config = T5Config(
             vocab_size=config.vocab_size,
             d_model=config.d_model,
@@ -187,7 +186,7 @@ def train_model(config):
         }, checkpoint_path)
         print(f"模型保存至 {checkpoint_path}")
     
-    print("训练完成!")
+    print("训练完成！")
 
 if __name__ == "__main__":
     print(f"PyTorch CUDA可用: {torch.cuda.is_available()}")
