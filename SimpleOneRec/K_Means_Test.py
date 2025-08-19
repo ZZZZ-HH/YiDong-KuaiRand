@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from Balanced_K_Means import residual_quantize, BalancedKMeans
+from SimpleOneRec.Balanced_K_Means import residual_quantize, BalancedKMeans
 
 def test_basic_shapes():
     N, D, L, K = 120, 32, 3, 8

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from Balanced_K_Means import BalancedKMeans, residual_quantize
+from SimpleOneRec.Balanced_K_Means import BalancedKMeans, residual_quantize
 from Multi_Head_Self_Attention import MultiHeadSelfAttention
 from RMSNorm import RMSNorm
 from Feed_Forward import PositionWiseFeedForward

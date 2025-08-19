@@ -23,7 +23,7 @@ class KuaiRecDataset(Dataset):
         # 生成语义ID映射(替换为真实生成逻辑)
         video_ids = df['video_id'].unique()
         semantic_id_map = {vid: np.random.randint(0, self.config.vocab_size, 
-                            size=self.config.semantic_id_layers) 
+                            size=self.config.semantic_id_layers)
                           for vid in video_ids}
         
         # 构建用户序列{user_id: [语义ID列表]}
