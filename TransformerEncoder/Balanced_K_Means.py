@@ -1,164 +1,78 @@
-import torch
+import torch 
+import torch.nn as nn
 import numpy as np
 import random
-from typing import Tuple, List
 
-def set_seed(seed: int):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+def BalancedKMeans(V: torch.tensor, K: int, max_iter: int = 100):
+    num_items, _ = V.shape
+    w = num_items // K
+    initial_indices = random.sample(range(num_items), K)
+    centroids = V[initial_indices].clone() # Cl = {cl_1, ..., cl_K}
 
-def _build_cluster_capacities(num_items: int, K: int):
-    """
-    使前remainder个簇容量为base+1，其余为base，保证总和为num_items
-    """
-    base = num_items // K
-    rem = num_items % K
-    capacities = [base + (1 if k < rem else 0) for k in range(K)]
-    return capacities
-
-def BalancedKMeans(
-    V: torch.Tensor,
-    K: int,
-    max_iter: int = 100,
-    seed: int = None,
-    verbose: bool = False
-) -> Tuple[torch.Tensor, np.ndarray, List[List[int]]]:
-    """
-    平衡（容量约束）K-Means的贪心近似实现
-    返回:
-      centroids: (K, D) tensor
-      labels: (N,) numpy array，对应每个样本的簇id
-      assignments: list of lists，簇 -> 样本索引
-    """
-    if seed is not None:
-        set_seed(seed)
-
-    device = V.device
-    N, D = V.shape
-    if K > N:
-        raise ValueError("K不能大于样本数")
-
-    capacities = _build_cluster_capacities(N, K)  # 每簇最大容量（近似均衡）
-    # 随机初始化中心
-    initial_indices = random.sample(range(N), K)
-    centroids = V[initial_indices].clone()
-
-    # 记录上一轮标签
-    prev_labels = None
-
-    for it in range(max_iter):
-        # 每轮重新分配
+    for iteration in range(max_iter):
         assignments = [[] for _ in range(K)]
-        remaining = set(range(N))
-
-        # 逐簇贪心挑选容量内最近样本
+        unassigned_indices = list(range(num_items))
+        U_vectors = V[unassigned_indices].clone()
         for k in range(K):
-            if capacities[k] == 0 or len(remaining) == 0:
-                continue
-            # 取剩余向量
-            idx_list = list(remaining)
-            U = V[idx_list]  # (M, D)
-            # 计算与当前质心距离
-            dists = torch.norm(U - centroids[k], dim=1)
-            # 选最小的top_c
-            top_c = min(capacities[k], len(idx_list))
-            top_vals, top_pos = torch.topk(dists, k=top_c, largest=False)
-            chosen_global = [idx_list[p.item()] for p in top_pos]
-            assignments[k].extend(chosen_global)
-            for g in chosen_global:
-                remaining.discard(g)
-            # 更新质心
-            if assignments[k]:
-                centroids[k] = V[assignments[k]].mean(dim=0)
-
-        # 若仍有剩余样本，分配给当前距离最近且尚未超容量的簇（或放宽容量）
-        if remaining:
-            if verbose:
-                print(f"[Iter {it}] 仍有 {len(remaining)} 个剩余样本，进行补分配")
-            rem_idx = list(remaining)
-            rem_vecs = V[rem_idx]
-            # 全部距离
-            dmat = torch.cdist(rem_vecs, centroids) # (R, K)
-            for i, g_idx in enumerate(rem_idx):
-                # 依距离升序放入
-                order = torch.argsort(dmat[i])
-                placed = False
-                for cand in order:
-                    c = cand.item()
-                    # 允许超容量1
-                    if len(assignments[c]) < capacities[c] + 1:
-                        assignments[c].append(g_idx)
-                        placed = True
-                        break
-                if not placed:
-                    # 强制放入最近
-                    c = order[0].item()
-                    assignments[c].append(g_idx)
-            # 更新所有质心
+            if len(U_vectors) == 0:
+                break
+            #print(U_vectors.shape)
+            #print(centroids.shape)
+            distances = torch.norm(U_vectors - centroids[k], dim=1)
+            _ , sorted_indices_in_U_vectors = torch.sort(distances)
+            global_sorted_item_indices = [unassigned_indices[idx.item()] for idx in sorted_indices_in_U_vectors]
+            num_to_assign = min(w, len(global_sorted_item_indices))
+            assigned_indices_for_k = [idx for idx in global_sorted_item_indices[:num_to_assign]]
+            assignments[k] = assigned_indices_for_k
+            if len(assignments[k]) > 0:
+                centroids[k] = torch.mean(V[assignments[k]], dim=0)
+            else:
+                pass
+            assigned_set = set(assigned_indices_for_k)
+            #print(len(unassigned_indices))
+            unassigned_indices = [idx for idx in unassigned_indices if idx not in assigned_set]
+            #print(len(unassigned_indices))
+            U_vectors = V[unassigned_indices].clone()
+            #print(len(U_vectors))
+        if unassigned_indices:
+            print(f"Iteration {iteration}: {len(unassigned_indices)} items remaining after balanced assignment. Distributing them.")
+            remaining_vectors = V[unassigned_indices].clone()
+            all_dists_to_centroids = torch.cdist(remaining_vectors, centroids)
+            closest_centroid_indices = torch.argmin(all_dists_to_centroids, dim=1)
+            for i, item_idx in enumerate(unassigned_indices):
+                closest_k = closest_centroid_indices[i].item()
+                assignments[closest_k].append(item_idx)
             for k in range(K):
-                if assignments[k]:
-                    centroids[k] = V[assignments[k]].mean(dim=0)
-
-        # 构造标签，对齐原始索引
-        labels = np.empty(N, dtype=np.int32)
-        for k, idxs in enumerate(assignments):
-            for idx in idxs:
-                labels[idx] = k
-
-        # 收敛判定
-        if prev_labels is not None and np.array_equal(labels, prev_labels):
-            if verbose:
-                print(f"Balanced K-Means 收敛于第 {it+1} 轮")
+                if len(assignments[k]) > 0:
+                    centroids[k] = torch.mean(V[assignments[k]], dim=0)
+        # new_labels = np.array([k for k, indices in enumerate(assignments) for _ in indices])
+        # 创建一个与原始数据点数量相同的空数组，用于存储最终的标签
+        new_labels = np.zeros(num_items, dtype=int)
+        for k, indices in enumerate(assignments):
+            for idx in indices:
+                new_labels[idx] = k
+                
+        if iteration == 0:
+            old_labels = new_labels.copy()
+        elif np.array_equal(new_labels, old_labels):
             break
-        prev_labels = labels.copy()
+        else:
+            old_labels = new_labels.copy()
 
-    return centroids, labels, assignments
+    print(f"Balanced K-means finished after {iteration+1} iterations.")
+    return centroids, new_labels
 
-def residual_quantize(
-    X: torch.Tensor,
-    L: int = 3,
-    K: int = 8,
-    max_iter: int = 100,
-    seed: int = None,
-    return_residuals: bool = False,
-    verbose: bool = False
-):
-    """
-    多层残差量化:
-      X: (N, D)
-      返回:
-        tokens: (N, L) numpy int
-        codebooks: list[Tensor] 长度L，每个(K, D)
-        residuals(optional): list[Tensor] 每层量化后残差
-    """
-    if seed is not None:
-        set_seed(seed)
-    device = X.device
-    N, D = X.shape
-
+def residual_quantize(X: torch.tensor, L=3, K=8):
+    N, _ = X.shape
     residual = X.clone()
-    tokens = np.zeros((N, L), dtype=np.int32)
+    tokens = np.zeros((N, L), dtype=int)
     codebooks = []
-    residual_list = []
 
     for l in range(L):
-        centroids, labels, _ = BalancedKMeans(
-            residual, K=K, max_iter=max_iter, seed=None if seed is None else seed + l
-        )
-        codebooks.append(centroids)
+        codebook, labels = BalancedKMeans(residual, K, 200)
         tokens[:, l] = labels
-        # 选中对应质心（索引转torch）
-        label_tensor = torch.from_numpy(labels).to(device=device, dtype=torch.long)
-        selected = centroids[label_tensor] # (N, D)
-        residual = residual - selected
-        if return_residuals:
-            residual_list.append(residual.clone())
-        if verbose:
-            with torch.no_grad():
-                recon_error = torch.mean(torch.sum(residual ** 2, dim=1)).item()
-                print(f"[Layer {l+1}] 平均残差能量 {recon_error:.6f}")
+        selected_centers = codebook[labels]
+        residual = residual - selected_centers
+        codebooks.append(codebook)
 
-    if return_residuals:
-        return tokens, codebooks, residual_list
     return tokens, codebooks
