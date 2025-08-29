@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="48e4c899-8bf3-4ad8-a0c6-549bd102545c" name="sysu">
+        <fileTransfer rootFolder="/home/share/caizh/code" accessType="SFTP" host="222.200.185.168" port="80" sshConfigId="be2be9d7-deda-46bf-b826-bbbfea8ad677" sshConfig="caizh@222.200.185.168:80 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
